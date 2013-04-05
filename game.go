@@ -3,6 +3,7 @@ package main
 import "bytes"
 import "sync"
 import "fmt"
+import "sort"
 
 const MaxDepth = -1
 
@@ -27,12 +28,28 @@ func max(a int, b int) int {
 }
 
 func (s state) String() string {
-	buf := bytes.Buffer{}
-	for _, t := range s {
-        fmt.Fprintf(&buf, "%d,", t)
-	}
-    fmt.Fprint(&buf, ";")
-	return buf.String()
+    repr := []string{}
+
+    temp := []int{}
+    for _, pawnValue := range s {
+        temp = append(temp, pawnValue)
+        if len(temp) == 3 {
+            sort.Sort(sort.IntSlice(temp))
+            buf := bytes.Buffer{}
+            for _, element := range temp {
+                fmt.Fprintf(&buf, "%d,", element)
+            }
+            repr = append(repr, buf.String())
+            temp = []int{}
+        }
+    }
+    sort.Sort(sort.StringSlice(repr))
+    result := bytes.Buffer{}
+    for _, element := range repr {
+        fmt.Fprintf(&result, "%s-", element)
+    }
+    fmt.Fprint(&result, ";")
+    return result.String()
 }
 
 func (s state) Clone() state {
@@ -196,6 +213,7 @@ func main() {
     }
     result := make(chan int, 1)
     startstate := state{0,0,0,0,0,0,0,0,0}
+    fmt.Println(startstate.String())
     f(startstate, 0, result)
     val := <-result
     fmt.Println(val)
