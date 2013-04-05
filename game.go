@@ -4,6 +4,10 @@ import "bytes"
 import "sync"
 import "fmt"
 import "sort"
+import "flag"
+import "os"
+import "log"
+import "runtime/pprof"
 
 const MaxDepth = -1
 
@@ -206,7 +210,19 @@ func f(s state, depth int, returnchan chan int) {
     }
 }
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to this file")
+
 func main() {
+    flag.Parse()
+    if *cpuprofile != "" {
+        fmt.Println("profiling")
+        f, err := os.Create(*cpuprofile)
+        if err != nil {
+            log.Fatal(err)
+        }
+        pprof.StartCPUProfile(f)
+        defer pprof.StopCPUProfile()
+    }
     fmt.Println("running")
     for _ = range [20]struct{}{} {
         execSem <- false
