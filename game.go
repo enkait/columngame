@@ -43,8 +43,8 @@ func (s state) Clone() state {
 
 func (s state) Move(movespec uint) state {
     news := s.Clone()
-    for pawn := uint(0); pawn < uint(len(s)); pawn++ {
-        if ((1<<pawn) & movespec) != 0 {
+    for pawn, _ := range s {
+        if ((1<<uint(pawn)) & movespec) != 0 {
             news[pawn] += 1
         }
     }
@@ -52,9 +52,9 @@ func (s state) Move(movespec uint) state {
 }
 
 func (s state) CheckMove(movespec uint) bool {
-    for pawn := uint(0); pawn < uint(len(s)); pawn++ {
-        if ((1<<pawn) & movespec) != 0 {
-            if s[pawn] == -1 {
+    for pawn, pawnValue := range s {
+        if ((1<<uint(pawn)) & movespec) != 0 {
+            if pawnValue == -1 {
                 return false
             }
         }
@@ -63,8 +63,8 @@ func (s state) CheckMove(movespec uint) bool {
 }
 
 func (s state) CheckKill(killspec uint) bool {
-    for pawn := uint(0); pawn < uint(len(s)); pawn++ {
-        if (((1<<pawn) & killspec) != 0) && s[pawn] == -1 {
+    for pawn, pawnValue := range s {
+        if (((1<<uint(pawn)) & killspec) != 0) && pawnValue == -1 {
             return false
         }
     }
@@ -73,8 +73,8 @@ func (s state) CheckKill(killspec uint) bool {
 
 func (s state) Kill(killspec uint) state {
     news := s.Clone()
-    for pawn := uint(0); pawn < uint(len(s)); pawn++ {
-        if ((1<<pawn) & killspec) != 0 {
+    for pawn, _ := range s {
+        if ((1<<uint(pawn)) & killspec) != 0 {
             news[pawn] = -1
         }
     }
