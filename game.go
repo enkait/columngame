@@ -1,15 +1,16 @@
 package main
 
-import "bytes"
 import "sync"
 import "fmt"
 import "sort"
 import "flag"
 import "os"
 import "log"
+import "time"
 import "runtime/pprof"
 
 const MaxDepth = -1
+const Columns = 3 * 4
 
 var execSem chan bool = make(chan bool, 100)
 
@@ -31,6 +32,54 @@ func max(a int, b int) int {
     return b
 }
 
+type reprtype [][]int
+
+func (r reprtype) Len() int {
+    return len(r)
+}
+
+func (r reprtype) Less(i, j int) bool {
+    return Compare(r[i], r[j])
+}
+
+func (r reprtype) Swap(i, j int) {
+    r[i], r[j] = r[j], r[i]
+}
+
+func Compare(a, b []int) bool {
+    length := min(len(a), len(b))
+    for i := 0; i < length; i++ {
+        if a[i] != b[i] {
+            return a[i] < b[i]
+        }
+    }
+    return len(a) < len(b);
+}
+
+func (s state) GetRepr() [Columns]int {
+    repr := [][]int{}
+
+    temp := make([]int, 0, 3)
+    for _, pawnValue := range s {
+        temp = append(temp, pawnValue)
+        if len(temp) == 3 {
+            sort.Sort(sort.IntSlice(temp))
+            repr = append(repr, temp)
+            temp = make([]int, 0, 3)
+        }
+    }
+    sort.Sort(reprtype(repr))
+
+    result := [Columns]int{};
+    for col, colValue := range repr {
+        for element, elementValue := range colValue {
+            result[col * 3 + element] = elementValue
+        }
+    }
+    return result
+}
+
+/*
 func (s state) String() string {
     repr := []string{}
 
@@ -55,6 +104,7 @@ func (s state) String() string {
     fmt.Fprint(&result, ";")
     return result.String()
 }
+*/
 
 func (s state) Clone() state {
     newstate := make(state, len(s))
@@ -114,7 +164,7 @@ func (s state) Dead() bool {
     return s.Max() == -1
 }
 
-var M map[string]int = map[string]int{}
+var M map[[Columns]int]int = map[[Columns]int]int{}
 var Mmutex sync.RWMutex
 
 func killable(kill uint, movement uint) bool {
@@ -124,7 +174,7 @@ func killable(kill uint, movement uint) bool {
 func f(s state, depth int, returnchan chan int) {
     //fmt.Println(s.String())
     Mmutex.RLock()
-    if val, ok := M[s.String()]; ok {
+    if val, ok := M[s.GetRepr()]; ok {
         Mmutex.RUnlock()
         returnchan <- val
         return
@@ -192,7 +242,7 @@ func f(s state, depth int, returnchan chan int) {
         }
 
         Mmutex.Lock()
-        M[s.String()] = highestresult
+        M[s.GetRepr()] = highestresult
         Mmutex.Unlock()
         //fmt.Println("pushing highestresult", highestresult)
         returnchan <- highestresult
@@ -227,10 +277,33 @@ func main() {
     for _ = range [20]struct{}{} {
         execSem <- false
     }
+    finished := make(chan struct{})
+    reporter := func() {
+        for {
+            time.Sleep(10000 * time.Millisecond)
+            panic("bla")
+            fmt.Println("getting lock")
+            Mmutex.RLock()
+            fmt.Println(len(M))
+            Mmutex.RUnlock()
+            fmt.Println("released lock")
+            select {
+            case _ = <-finished:
+                break
+            default:
+            }
+        }
+    }
+    go reporter();
     result := make(chan int, 1)
     startstate := state{0,0,0,0,0,0,0,0,0,0,0,0}
-    fmt.Println(startstate.String())
+    fmt.Println(startstate.GetRepr())
+    movestate := startstate.Move(69)
+    fmt.Println(movestate.GetRepr())
+    killstate := movestate.Kill(31)
+    fmt.Println(killstate.GetRepr())
     f(startstate, 0, result)
     val := <-result
     fmt.Println(val)
+    finished <- struct{}{}
 }
