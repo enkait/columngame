@@ -280,8 +280,7 @@ func main() {
     finished := make(chan struct{})
     reporter := func() {
         for {
-            time.Sleep(10000 * time.Millisecond)
-            panic("bla")
+            time.Sleep(5000 * time.Millisecond)
             fmt.Println("getting lock")
             Mmutex.RLock()
             fmt.Println(len(M))
