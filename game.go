@@ -30,7 +30,7 @@ func max(a int, b int) int {
 func (s state) String() string {
     repr := []string{}
 
-    temp := []int{}
+    temp := make([]int, 0, 3)
     for _, pawnValue := range s {
         temp = append(temp, pawnValue)
         if len(temp) == 3 {
@@ -40,7 +40,7 @@ func (s state) String() string {
                 fmt.Fprintf(&buf, "%d,", element)
             }
             repr = append(repr, buf.String())
-            temp = []int{}
+            temp = temp[:0]
         }
     }
     sort.Sort(sort.StringSlice(repr))
@@ -212,7 +212,7 @@ func main() {
         execSem <- false
     }
     result := make(chan int, 1)
-    startstate := state{0,0,0,0,0,0,0,0,0}
+    startstate := state{0,0,0,0,0,0,0,0,0,0,0,0}
     fmt.Println(startstate.String())
     f(startstate, 0, result)
     val := <-result
