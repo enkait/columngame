@@ -165,6 +165,7 @@ func (s state) Dead() bool {
 }
 
 var M map[[Columns]int]int = map[[Columns]int]int{}
+var fincounter = 0
 var Mmutex sync.RWMutex
 
 func killable(kill uint, movement uint) bool {
@@ -255,6 +256,9 @@ func f(s state, depth int, returnchan chan int) {
         go func() {
             realf()
             execSem <- false
+            Mmutex.Lock()
+            fincounter += 1
+            Mmutex.Unlock()
         }();
     }
 }
@@ -279,7 +283,8 @@ func main() {
             time.Sleep(5000 * time.Millisecond)
             fmt.Println("getting lock")
             Mmutex.RLock()
-            fmt.Println(len(M))
+            fmt.Println("Calculated:", len(M), "states")
+            fmt.Println("Including:", fincounter, "starting states (num threads terminated)")
             Mmutex.RUnlock()
             fmt.Println("released lock")
             select {
