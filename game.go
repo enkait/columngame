@@ -9,14 +9,14 @@ import "log"
 import "time"
 import "runtime/pprof"
 
-const MaxDepth = -1
-const Columns = 3 * 4
-
-var execSem chan bool = make(chan bool, 100)
+const MaxDepth = 0
+const Columns = 3 * 5
 
 type state []int
 
 const debug = false
+
+var execSem chan bool = make(chan bool, 100)
 
 func min(a int, b int) int {
     if a < b {
@@ -251,7 +251,6 @@ func f(s state, depth int, returnchan chan int) {
     if depth > MaxDepth {
         realf()
     } else {
-        //fmt.Println("spawning")
         _ = <-execSem
         go func() {
             realf()
@@ -274,9 +273,6 @@ func main() {
         defer pprof.StopCPUProfile()
     }
     fmt.Println("running")
-    for _ = range [20]struct{}{} {
-        execSem <- false
-    }
     finished := make(chan struct{})
     reporter := func() {
         for {
@@ -294,14 +290,17 @@ func main() {
         }
     }
     go reporter();
+    for _ = range [100]struct{}{} {
+        execSem <- false
+    }
     result := make(chan int, 1)
-    startstate := state{0,0,0,0,0,0,0,0,0,0,0,0}
+    startstate := state{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
     fmt.Println(startstate.GetRepr())
     movestate := startstate.Move(69)
     fmt.Println(movestate.GetRepr())
     killstate := movestate.Kill(31)
     fmt.Println(killstate.GetRepr())
-    f(startstate, 0, result)
+    f(startstate, -1, result)
     val := <-result
     fmt.Println(val)
     finished <- struct{}{}
