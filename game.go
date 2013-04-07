@@ -11,12 +11,13 @@ import "runtime/pprof"
 
 const MaxDepth = 0
 const Columns = 3 * 5
+const KnownLimit = 8
 
 type state []int
 
 const debug = false
 
-var execSem chan bool = make(chan bool, 100)
+var execSem chan bool = make(chan bool, 800)
 
 func min(a int, b int) int {
     if a < b {
@@ -79,33 +80,6 @@ func (s state) GetRepr() [Columns]int {
     return result
 }
 
-/*
-func (s state) String() string {
-    repr := []string{}
-
-    temp := make([]int, 0, 3)
-    for _, pawnValue := range s {
-        temp = append(temp, pawnValue)
-        if len(temp) == 3 {
-            sort.Sort(sort.IntSlice(temp))
-            buf := bytes.Buffer{}
-            for _, element := range temp {
-                fmt.Fprintf(&buf, "%d,", element)
-            }
-            repr = append(repr, buf.String())
-            temp = temp[:0]
-        }
-    }
-    sort.Sort(sort.StringSlice(repr))
-    result := bytes.Buffer{}
-    for _, element := range repr {
-        fmt.Fprintf(&result, "%s-", element)
-    }
-    fmt.Fprint(&result, ";")
-    return result.String()
-}
-*/
-
 func (s state) Clone() state {
     newstate := make(state, len(s))
     copy(newstate, s)
@@ -166,6 +140,7 @@ func (s state) Dead() bool {
 
 var M map[[Columns]int]int = map[[Columns]int]int{}
 var fincounter = 0
+var optcounter = 0
 var Mmutex sync.RWMutex
 
 func killable(kill uint, movement uint) bool {
@@ -173,6 +148,14 @@ func killable(kill uint, movement uint) bool {
 }
 
 func f(s state, depth int, returnchan chan int) {
+    if (s.Max() + 1 == KnownLimit) {
+        returnchan <- KnownLimit
+        Mmutex.Lock()
+        optcounter += 1
+        Mmutex.Unlock()
+        return
+    }
+
     //fmt.Println(s.String())
     Mmutex.RLock()
     if val, ok := M[s.GetRepr()]; ok {
@@ -265,6 +248,29 @@ func f(s state, depth int, returnchan chan int) {
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to this file")
 
+func dump_map() {
+    for {
+        filename := ""
+        fmt.Scanf("%s", &filename)
+        fmt.Println("dumping to", filename)
+        f, err := os.Create(filename)
+        if err != nil {
+            panic(err)
+        }
+        defer f.Close()
+
+        Mmutex.RLock()
+        for key, value := range M {
+            fmt.Fprint(f, key);
+            fmt.Fprint(f, ";");
+            fmt.Fprint(f, value);
+            fmt.Fprintln(f, ";");
+        }
+        Mmutex.RUnlock()
+        fmt.Println("dumped")
+    }
+}
+
 func main() {
     flag.Parse()
     if *cpuprofile != "" {
@@ -277,6 +283,7 @@ func main() {
         defer pprof.StopCPUProfile()
     }
     fmt.Println("running")
+
     finished := make(chan struct{})
     reporter := func() {
         for {
@@ -285,6 +292,7 @@ func main() {
             Mmutex.RLock()
             fmt.Println("Calculated:", len(M), "states")
             fmt.Println("Including:", fincounter, "starting states (num threads terminated)")
+            fmt.Println("Optimisation:", optcounter)
             Mmutex.RUnlock()
             fmt.Println("released lock")
             select {
@@ -295,16 +303,13 @@ func main() {
         }
     }
     go reporter();
-    for _ = range [100]struct{}{} {
+    go dump_map();
+
+    for _ = range [800]struct{}{} {
         execSem <- false
     }
     result := make(chan int, 1)
     startstate := state{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
-    fmt.Println(startstate.GetRepr())
-    movestate := startstate.Move(69)
-    fmt.Println(movestate.GetRepr())
-    killstate := movestate.Kill(31)
-    fmt.Println(killstate.GetRepr())
     f(startstate, -1, result)
     val := <-result
     fmt.Println(val)
