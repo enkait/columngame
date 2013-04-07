@@ -139,6 +139,7 @@ func (s state) Dead() bool {
 }
 
 var M map[[Columns]int]int = map[[Columns]int]int{}
+var Monce map[[Columns]int]*sync.Once = map[[Columns]int]*sync.Once{}
 var fincounter = 0
 var optcounter = 0
 var Mmutex sync.RWMutex
@@ -156,7 +157,6 @@ func f(s state, depth int, returnchan chan int) {
         return
     }
 
-    //fmt.Println(s.String())
     Mmutex.RLock()
     if val, ok := M[s.GetRepr()]; ok {
         Mmutex.RUnlock()
@@ -165,11 +165,19 @@ func f(s state, depth int, returnchan chan int) {
     }
     Mmutex.RUnlock()
 
+    Mmutex.Lock()
+    onlyonce, ok := Monce[s.GetRepr()]
+    if !ok {
+        onlyonce = new(sync.Once)
+        Monce[s.GetRepr()] = onlyonce
+    }
+    Mmutex.Unlock()
+
     realf := func() {
         if s.Dead() {
-            //fmt.Println("pushing 0")
-            returnchan <- 0
-            //fmt.Println("pushed 0")
+            Mmutex.Lock()
+            M[s.GetRepr()] = 0
+            Mmutex.Unlock()
             return
         }
         masklen := uint(len(s))
@@ -178,14 +186,10 @@ func f(s state, depth int, returnchan chan int) {
         takemin := func(resultchannel chan int, inputchannel chan int, taskcount int) {
             globalmin := 1000000000
             for task := 0; task < taskcount; task++ {
-                //fmt.Println("wating on task: ", task, " of ", taskcount)
                 result := <-inputchannel
-                //fmt.Println("running on task: ", task, " of ", taskcount)
                 globalmin = min(globalmin, result)
             }
-            //fmt.Println("pushing globalmin", globalmin)
             resultchannel <- globalmin
-            //fmt.Println("pushed globalmin", globalmin)
         }
 
         highestresult := 0
@@ -195,7 +199,6 @@ func f(s state, depth int, returnchan chan int) {
         for movement := uint(1); movement < movementcodes; movement++ {
             if s.CheckMove(movement) {
                 news := s.Move(movement)
-                //fmt.Println(movement, "movement", s.String(), news.String())
                 highestresult = max(news.Max(), highestresult)
                 resultchannel := make(chan int, len(s))
                 taskcount := 0
@@ -203,7 +206,6 @@ func f(s state, depth int, returnchan chan int) {
                     killspec := (7 << (3 * kill)) & movement
                     if killspec != 0 && news.CheckKill(killspec) {
                         newkilleds := news.Kill(killspec)
-                        //fmt.Println(killspec, "kill", news.String(), newkilleds.String())
                         f(newkilleds, depth+1, resultchannel)
                         taskcount += 1
                     }
@@ -211,7 +213,6 @@ func f(s state, depth int, returnchan chan int) {
                 if depth > MaxDepth {
                     takemin(globalresultchannel, resultchannel, taskcount)
                 } else {
-                    //fmt.Println("spawning")
                     go takemin(globalresultchannel, resultchannel, taskcount)
                 }
                 movements += 1
@@ -219,21 +220,27 @@ func f(s state, depth int, returnchan chan int) {
         }
 
         for task := 0; task < movements; task++ {
-            //fmt.Println("wating on movement: ", task, " of ", movements)
             result := <-globalresultchannel
-            //fmt.Println("running on movement: ", task, " of ", movements)
             highestresult = max(highestresult, result)
         }
 
         Mmutex.Lock()
         M[s.GetRepr()] = highestresult
         Mmutex.Unlock()
-        //fmt.Println("pushing highestresult", highestresult)
-        returnchan <- highestresult
-        //fmt.Println("pushed highestresult", highestresult)
     }
+
     if depth > MaxDepth {
-        realf()
+        onlyonce.Do(realf)
+
+        Mmutex.RLock()
+        if val, ok := M[s.GetRepr()]; ok {
+            Mmutex.RUnlock()
+            returnchan <- val
+            return
+        } else {
+            panic("something went terribly wrong")
+        }
+        Mmutex.RUnlock()
     } else {
         _ = <-execSem
         go func() {
@@ -244,6 +251,7 @@ func f(s state, depth int, returnchan chan int) {
             Mmutex.Unlock()
         }();
     }
+
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to this file")
