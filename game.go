@@ -8,6 +8,9 @@ import "os"
 import "log"
 import "time"
 import "runtime/pprof"
+import "bufio"
+import "strings"
+import "strconv"
 
 const MaxDepth = 0
 const Columns = 3 * 5
@@ -255,6 +258,49 @@ func f(s state, depth int, returnchan chan int) {
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to this file")
+var load = flag.String("load", "", "read map from file")
+
+func load_map() {
+    fmt.Println("loading from", *load)
+    f, err := os.Open(*load)
+    if err != nil {
+        panic(err)
+    }
+    defer f.Close()
+
+    r := bufio.NewReader(f)
+
+    Mmutex.Lock()
+    for {
+        key, err := r.ReadString(byte(';'))
+        if err != nil {
+            break
+        }
+        value, err := r.ReadString(byte(';'))
+        if err != nil {
+            break
+        }
+        key = strings.TrimSpace(key)
+        key = strings.TrimRight(key, ";[]")
+        key = strings.TrimLeft(key, ";[]")
+        value = strings.TrimSpace(value)
+        value = strings.TrimRight(value, ";")
+        keytab := strings.Split(key, " ")
+
+        keyrepr := [Columns]int{}
+
+        for index, indexvalue := range keytab {
+            value64bit, _ := strconv.ParseInt(indexvalue, 0, 32)
+            keyrepr[index] = int(value64bit)
+        }
+        value64bit, _ := strconv.ParseInt(value, 0, 32)
+        valuerepr := int(value64bit)
+
+        M[keyrepr] = valuerepr
+    }
+    Mmutex.Unlock()
+    fmt.Println("loaded")
+}
 
 func dump_map() {
     for {
@@ -312,6 +358,7 @@ func main() {
     }
     go reporter();
     go dump_map();
+    load_map()
 
     for _ = range [10000]struct{}{} {
         execSem <- false
