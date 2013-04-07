@@ -17,7 +17,7 @@ type state []int
 
 const debug = false
 
-var execSem chan bool = make(chan bool, 800)
+var execSem chan bool = make(chan bool, 10000)
 
 func min(a int, b int) int {
     if a < b {
@@ -313,7 +313,7 @@ func main() {
     go reporter();
     go dump_map();
 
-    for _ = range [800]struct{}{} {
+    for _ = range [10000]struct{}{} {
         execSem <- false
     }
     result := make(chan int, 1)
