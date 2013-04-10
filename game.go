@@ -332,19 +332,22 @@ func dump_map(filename string) {
     defer f.Close()
 
     Mmutex.RLock()
+    fmt.Println("dumping, got lock")
     for key, value := range M {
         fmt.Fprint(f, key);
         fmt.Fprint(f, ";");
         fmt.Fprint(f, value);
         fmt.Fprintln(f, ";");
     }
-    Mmutex.RUnlock()
+    fmt.Println("dumping readonly")
     for key, value := range readM {
         fmt.Fprint(f, key);
         fmt.Fprint(f, ";");
         fmt.Fprint(f, value);
         fmt.Fprintln(f, ";");
     }
+    fmt.Println("dumping, releasing lock")
+    Mmutex.RUnlock()
     fmt.Println("dumped")
 }
 
