@@ -14,13 +14,13 @@ import "strconv"
 
 const MaxDepth = 0
 const Columns = 3 * 5
-const KnownLimit = 7
+const KnownLimit = 8
 
 type state []int
 
 const debug = false
 
-var execSem chan bool = make(chan bool, 10000)
+var execSem chan bool = make(chan bool, 100)
 
 func min(a int, b int) int {
     if a < b {
@@ -159,6 +159,11 @@ func f(s state, depth int, returnchan chan int) {
 
     if val, ok := readM[s.GetRepr()]; ok {
         returnchan <- val
+        if depth <= MaxDepth {
+            Mmutex.Lock()
+            fincounter += 1
+            Mmutex.Unlock()
+        }
         return
     }
 
@@ -245,11 +250,17 @@ func f(s state, depth int, returnchan chan int) {
         } else {
             panic("something went terribly wrong")
         }
-        Mmutex.RUnlock()
     } else {
         _ = <-execSem
         go func() {
             realf()
+            Mmutex.RLock()
+            if val, ok := M[s.GetRepr()]; ok {
+                Mmutex.RUnlock()
+                returnchan <- val
+            } else {
+                panic("something went terribly wrong")
+            }
             execSem <- false
             Mmutex.Lock()
             fincounter += 1
@@ -327,33 +338,39 @@ func dump_map(filename string) {
         fmt.Fprint(f, value);
         fmt.Fprintln(f, ";");
     }
+    Mmutex.RUnlock()
     for key, value := range readM {
         fmt.Fprint(f, key);
         fmt.Fprint(f, ";");
         fmt.Fprint(f, value);
         fmt.Fprintln(f, ";");
     }
-    Mmutex.RUnlock()
     fmt.Println("dumped")
 }
 
 var finished chan struct{}
 
 func reporter() {
+    counter := 0
     for {
-        time.Sleep(600000 * time.Millisecond)
+        counter += 1
         fmt.Println("getting lock")
         Mmutex.RLock()
-        fmt.Println("Calculated:", len(M), "states")
+        fmt.Println("Calculated:", len(M) + len(readM), "states")
         fmt.Println("Including:", fincounter, "starting states (num threads terminated)")
         Mmutex.RUnlock()
-        dump_map("defaultdump")
+        if counter == 1 {
+            counter = 0
+            dump_map("defaultdump")
+        }
         fmt.Println("released lock")
         select {
         case _ = <-finished:
             break
         default:
         }
+        //runtime.gosched()
+        time.Sleep(60000 * time.Millisecond)
     }
 }
 
@@ -371,13 +388,14 @@ func main() {
     fmt.Println("running")
 
     finished = make(chan struct{})
-    go reporter();
-    go dump_map_thread();
     if *load != "" {
         load_map()
     }
 
-    for _ = range [10000]struct{}{} {
+    go reporter();
+    go dump_map_thread();
+
+    for _ = range [100]struct{}{} {
         execSem <- false
     }
     result := make(chan int, 1)
