@@ -14,7 +14,7 @@ import "strconv"
 
 const MaxDepth = 0
 const Columns = 3 * 5
-const KnownLimit = 8
+const KnownLimit = 7
 
 type state []int
 
@@ -142,9 +142,9 @@ func (s state) Dead() bool {
 }
 
 var M map[[Columns]int]int = map[[Columns]int]int{}
+var readM map[[Columns]int]int = map[[Columns]int]int{}
 var Monce map[[Columns]int]*sync.Once = map[[Columns]int]*sync.Once{}
 var fincounter = 0
-var optcounter = 0
 var Mmutex sync.RWMutex
 
 func killable(kill uint, movement uint) bool {
@@ -154,9 +154,11 @@ func killable(kill uint, movement uint) bool {
 func f(s state, depth int, returnchan chan int) {
     if (s.Max() + 1 == KnownLimit) {
         returnchan <- KnownLimit
-        Mmutex.Lock()
-        optcounter += 1
-        Mmutex.Unlock()
+        return
+    }
+
+    if val, ok := readM[s.GetRepr()]; ok {
+        returnchan <- val
         return
     }
 
@@ -296,32 +298,62 @@ func load_map() {
         value64bit, _ := strconv.ParseInt(value, 0, 32)
         valuerepr := int(value64bit)
 
-        M[keyrepr] = valuerepr
+        readM[keyrepr] = valuerepr
     }
     Mmutex.Unlock()
     fmt.Println("loaded")
 }
 
-func dump_map() {
+func dump_map_thread() {
     for {
         filename := ""
         fmt.Scanf("%s", &filename)
-        fmt.Println("dumping to", filename)
-        f, err := os.Create(filename)
-        if err != nil {
-            panic(err)
-        }
-        defer f.Close()
+        dump_map(filename)
+    }
+}
 
+func dump_map(filename string) {
+    fmt.Println("dumping to", filename)
+    f, err := os.Create(filename)
+    if err != nil {
+        panic(err)
+    }
+    defer f.Close()
+
+    Mmutex.RLock()
+    for key, value := range M {
+        fmt.Fprint(f, key);
+        fmt.Fprint(f, ";");
+        fmt.Fprint(f, value);
+        fmt.Fprintln(f, ";");
+    }
+    for key, value := range readM {
+        fmt.Fprint(f, key);
+        fmt.Fprint(f, ";");
+        fmt.Fprint(f, value);
+        fmt.Fprintln(f, ";");
+    }
+    Mmutex.RUnlock()
+    fmt.Println("dumped")
+}
+
+var finished chan struct{}
+
+func reporter() {
+    for {
+        time.Sleep(600000 * time.Millisecond)
+        fmt.Println("getting lock")
         Mmutex.RLock()
-        for key, value := range M {
-            fmt.Fprint(f, key);
-            fmt.Fprint(f, ";");
-            fmt.Fprint(f, value);
-            fmt.Fprintln(f, ";");
-        }
+        fmt.Println("Calculated:", len(M), "states")
+        fmt.Println("Including:", fincounter, "starting states (num threads terminated)")
         Mmutex.RUnlock()
-        fmt.Println("dumped")
+        dump_map("defaultdump")
+        fmt.Println("released lock")
+        select {
+        case _ = <-finished:
+            break
+        default:
+        }
     }
 }
 
@@ -338,27 +370,12 @@ func main() {
     }
     fmt.Println("running")
 
-    finished := make(chan struct{})
-    reporter := func() {
-        for {
-            time.Sleep(5000 * time.Millisecond)
-            fmt.Println("getting lock")
-            Mmutex.RLock()
-            fmt.Println("Calculated:", len(M), "states")
-            fmt.Println("Including:", fincounter, "starting states (num threads terminated)")
-            fmt.Println("Optimisation:", optcounter)
-            Mmutex.RUnlock()
-            fmt.Println("released lock")
-            select {
-            case _ = <-finished:
-                break
-            default:
-            }
-        }
-    }
+    finished = make(chan struct{})
     go reporter();
-    go dump_map();
-    load_map()
+    go dump_map_thread();
+    if *load != "" {
+        load_map()
+    }
 
     for _ = range [10000]struct{}{} {
         execSem <- false
