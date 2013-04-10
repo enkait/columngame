@@ -146,6 +146,7 @@ var readM map[[Columns]int]int = map[[Columns]int]int{}
 var Monce map[[Columns]int]*sync.Once = map[[Columns]int]*sync.Once{}
 var fincounter = 0
 var Mmutex sync.RWMutex
+var readMmutex sync.RWMutex
 
 func killable(kill uint, movement uint) bool {
     return ((movement >> (3 * kill)) & 7) != 0
@@ -157,6 +158,7 @@ func f(s state, depth int, returnchan chan int) {
         return
     }
 
+    readMmutex.RLock()
     if val, ok := readM[s.GetRepr()]; ok {
         returnchan <- val
         if depth <= MaxDepth {
@@ -166,6 +168,7 @@ func f(s state, depth int, returnchan chan int) {
         }
         return
     }
+    readMmutex.RUnlock()
 
     Mmutex.RLock()
     if val, ok := M[s.GetRepr()]; ok {
@@ -323,6 +326,21 @@ func dump_map_thread() {
     }
 }
 
+func store_results() {
+    fmt.Println("storing results")
+    readMmutex.RLock()
+    Mmutex.RLock()
+    fmt.Println("got mutexes, storing M in readM")
+    for key, value := range M {
+        readM[key] = value
+    }
+    M = map[[Columns]int]int{}
+    fmt.Println("releasing mutexes")
+    Mmutex.RUnlock()
+    readMmutex.RUnlock()
+    fmt.Println("released mutexes")
+}
+
 func dump_map(filename string) {
     fmt.Println("dumping to", filename)
     f, err := os.Create(filename)
@@ -362,9 +380,10 @@ func reporter() {
         fmt.Println("Calculated:", len(M) + len(readM), "states")
         fmt.Println("Including:", fincounter, "starting states (num threads terminated)")
         Mmutex.RUnlock()
-        if counter == 1 {
+        if counter == 10 {
             counter = 0
             dump_map("defaultdump")
+            store_results()
         }
         fmt.Println("released lock")
         select {
