@@ -20,7 +20,7 @@ type state []int
 
 const debug = false
 
-var execSem chan bool = make(chan bool, 100)
+var execSem chan bool = make(chan bool, 500)
 
 func min(a int, b int) int {
     if a < b {
@@ -160,6 +160,7 @@ func f(s state, depth int, returnchan chan int) {
 
     readMmutex.RLock()
     if val, ok := readM[s.GetRepr()]; ok {
+        readMmutex.RUnlock()
         returnchan <- val
         if depth <= MaxDepth {
             Mmutex.Lock()
@@ -178,13 +179,18 @@ func f(s state, depth int, returnchan chan int) {
     }
     Mmutex.RUnlock()
 
-    Mmutex.Lock()
+    Mmutex.RLock()
     onlyonce, ok := Monce[s.GetRepr()]
+    Mmutex.RUnlock()
     if !ok {
-        onlyonce = new(sync.Once)
-        Monce[s.GetRepr()] = onlyonce
+        Mmutex.Lock()
+        onlyonce, ok = Monce[s.GetRepr()] // might have changed since last time
+        if !ok {
+            onlyonce = new(sync.Once)
+            Monce[s.GetRepr()] = onlyonce
+        }
+        Mmutex.Unlock()
     }
-    Mmutex.Unlock()
 
     realf := func() {
         if s.Dead() {
@@ -328,16 +334,16 @@ func dump_map_thread() {
 
 func store_results() {
     fmt.Println("storing results")
-    readMmutex.RLock()
-    Mmutex.RLock()
+    readMmutex.Lock()
+    Mmutex.Lock()
     fmt.Println("got mutexes, storing M in readM")
     for key, value := range M {
         readM[key] = value
     }
     M = map[[Columns]int]int{}
     fmt.Println("releasing mutexes")
-    Mmutex.RUnlock()
-    readMmutex.RUnlock()
+    Mmutex.Unlock()
+    readMmutex.Unlock()
     fmt.Println("released mutexes")
 }
 
@@ -377,7 +383,7 @@ func reporter() {
         counter += 1
         fmt.Println("getting lock")
         Mmutex.RLock()
-        fmt.Println("Calculated:", len(M) + len(readM), "states")
+        fmt.Println("Calculated:", len(M) + len(readM), "states, new:", len(M), ", old:", len(readM))
         fmt.Println("Including:", fincounter, "starting states (num threads terminated)")
         Mmutex.RUnlock()
         if counter == 10 {
@@ -408,6 +414,14 @@ func main() {
         defer pprof.StopCPUProfile()
     }
     fmt.Println("running")
+    a := 5
+    b := 3
+    if true {
+        a = 1
+        b := 2
+        fmt.Println(a, b)
+    }
+    fmt.Println(a, b)
 
     finished = make(chan struct{})
     if *load != "" {
@@ -417,7 +431,7 @@ func main() {
     go reporter();
     go dump_map_thread();
 
-    for _ = range [100]struct{}{} {
+    for _ = range [500]struct{}{} {
         execSem <- false
     }
     result := make(chan int, 1)
