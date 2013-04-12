@@ -20,7 +20,7 @@ type state []int
 
 const debug = false
 
-var execSem chan bool = make(chan bool, 500)
+var execSem chan bool = make(chan bool, 100)
 
 func min(a int, b int) int {
     if a < b {
@@ -256,6 +256,10 @@ func f(s state, depth int, returnchan chan int) {
             Mmutex.RUnlock()
             returnchan <- val
             return
+        } else if val, ok := readM[s.GetRepr()]; ok { //perhaps we already copied the result
+            Mmutex.RUnlock()
+            returnchan <- val
+            return
         } else {
             panic("something went terribly wrong")
         }
@@ -265,6 +269,9 @@ func f(s state, depth int, returnchan chan int) {
             realf()
             Mmutex.RLock()
             if val, ok := M[s.GetRepr()]; ok {
+                Mmutex.RUnlock()
+                returnchan <- val
+            } else if val, ok := readM[s.GetRepr()]; ok { // as above, maybe we already copied this to Mread
                 Mmutex.RUnlock()
                 returnchan <- val
             } else {
@@ -431,7 +438,7 @@ func main() {
     go reporter();
     go dump_map_thread();
 
-    for _ = range [500]struct{}{} {
+    for _ = range [100]struct{}{} {
         execSem <- false
     }
     result := make(chan int, 1)
