@@ -2,7 +2,6 @@ package main
 
 import "sync"
 import "fmt"
-import "sort"
 import "flag"
 import "os"
 import "log"
@@ -11,12 +10,11 @@ import "runtime/pprof"
 import "bufio"
 import "strings"
 import "strconv"
+import "columngame/state"
 
 const MaxDepth = 0
 const Columns = 3 * 4
 const KnownLimit = 6
-
-type state []int
 
 const debug = false
 
@@ -60,87 +58,6 @@ func Compare(a, b []int) bool {
     return len(a) < len(b);
 }
 
-func (s state) GetRepr() [Columns]int {
-    repr := [][]int{}
-
-    temp := make([]int, 0, 3)
-    for _, pawnValue := range s {
-        temp = append(temp, pawnValue)
-        if len(temp) == 3 {
-            sort.Sort(sort.IntSlice(temp))
-            repr = append(repr, temp)
-            temp = make([]int, 0, 3)
-        }
-    }
-    sort.Sort(reprtype(repr))
-
-    result := [Columns]int{};
-    for col, colValue := range repr {
-        for element, elementValue := range colValue {
-            result[col * 3 + element] = elementValue
-        }
-    }
-    return result
-}
-
-func (s state) Clone() state {
-    newstate := make(state, len(s))
-    copy(newstate, s)
-    return newstate
-}
-
-func (s state) Move(movespec uint) state {
-    news := s.Clone()
-    for pawn, _ := range s {
-        if ((1<<uint(pawn)) & movespec) != 0 {
-            news[pawn] += 1
-        }
-    }
-    return news
-}
-
-func (s state) CheckMove(movespec uint) bool {
-    for pawn, pawnValue := range s {
-        if ((1<<uint(pawn)) & movespec) != 0 {
-            if pawnValue == -1 {
-                return false
-            }
-        }
-    }
-    return true
-}
-
-func (s state) CheckKill(killspec uint) bool {
-    for pawn, pawnValue := range s {
-        if (((1<<uint(pawn)) & killspec) != 0) && pawnValue == -1 {
-            return false
-        }
-    }
-    return true
-}
-
-func (s state) Kill(killspec uint) state {
-    news := s.Clone()
-    for pawn, _ := range s {
-        if ((1<<uint(pawn)) & killspec) != 0 {
-            news[pawn] = -1
-        }
-    }
-    return news;
-}
-
-func (s state) Max() int {
-    best := -1
-    for pawn := uint(0); pawn < uint(len(s)); pawn++ {
-        best = max(s[pawn], best)
-    }
-    return best;
-}
-
-func (s state) Dead() bool {
-    return s.Max() == -1
-}
-
 var M map[[Columns]int]int = map[[Columns]int]int{}
 var readM map[[Columns]int]int = map[[Columns]int]int{}
 var Monce map[[Columns]int]*sync.Once = map[[Columns]int]*sync.Once{}
@@ -152,7 +69,7 @@ func killable(kill uint, movement uint) bool {
     return ((movement >> (3 * kill)) & 7) != 0
 }
 
-func f(s state, depth int, returnchan chan int) {
+func f(s state.State, depth int, returnchan chan int) {
     if (s.Max() + 1 == KnownLimit) {
         returnchan <- KnownLimit
         return
@@ -442,7 +359,7 @@ func main() {
         execSem <- false
     }
     result := make(chan int, 1)
-    startstate := state{0,0,0,0,0,0,0,0,0,0,0,0}
+    startstate := state.State{0,0,0,0,0,0,0,0,0,0,0,0}
     f(startstate, -1, result)
     val := <-result
     fmt.Println(val)
