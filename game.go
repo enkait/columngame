@@ -13,8 +13,8 @@ import "strings"
 import "strconv"
 
 const MaxDepth = 0
-const Columns = 3 * 5
-const KnownLimit = 8
+const Columns = 3 * 4
+const KnownLimit = 6
 
 type state []int
 
@@ -442,9 +442,10 @@ func main() {
         execSem <- false
     }
     result := make(chan int, 1)
-    startstate := state{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}
+    startstate := state{0,0,0,0,0,0,0,0,0,0,0,0}
     f(startstate, -1, result)
     val := <-result
     fmt.Println(val)
     finished <- struct{}{}
+    dump_map("finished")
 }
