@@ -50,21 +50,21 @@ func GetLookup() Lookup {
     return newlookup
 }
 
-func (l Lookup) ReadOnlyLookup(s state.State) (Payload, bool) {
+func (l *Lookup) ReadOnlyLookup(s state.State) (Payload, bool) {
     l.readMmutex.RLock()
     val, ok := l.readM[s.GetRepr()]
     l.readMmutex.RUnlock()
     return val, ok
 }
 
-func (l Lookup) WriteableLookup(s state.State) (Payload, bool) {
+func (l *Lookup) WriteableLookup(s state.State) (Payload, bool) {
     l.Mmutex.RLock()
     val, ok := l.M[s.GetRepr()]
     l.Mmutex.RUnlock()
     return val, ok
 }
 
-func (l Lookup) Lookup(s state.State) (Payload, bool) {
+func (l *Lookup) Lookup(s state.State) (Payload, bool) {
     if val, ok := l.ReadOnlyLookup(s); ok {
         return val, ok
     }
@@ -74,7 +74,7 @@ func (l Lookup) Lookup(s state.State) (Payload, bool) {
     return Payload{}, false
 }
 
-func (l Lookup) GetOnce(s state.State) *sync.Once {
+func (l *Lookup) GetOnce(s state.State) *sync.Once {
     l.Mmutex.RLock()
     onlyonce, ok := l.Monce[s.GetRepr()]
     l.Mmutex.RUnlock()
@@ -90,7 +90,7 @@ func (l Lookup) GetOnce(s state.State) *sync.Once {
     return onlyonce
 }
 
-func (l Lookup) GetStats() (int, int) {
+func (l *Lookup) GetStats() (int, int) {
     l.readMmutex.RLock()
     l.Mmutex.RLock()
     newdata, cacheddata := len(l.M), len(l.readM)
@@ -99,7 +99,7 @@ func (l Lookup) GetStats() (int, int) {
     return newdata, cacheddata
 }
 
-func (l Lookup) Cache() {
+func (l *Lookup) Cache() {
     fmt.Println("storing results")
     l.readMmutex.Lock()
     l.Mmutex.Lock()
@@ -114,13 +114,13 @@ func (l Lookup) Cache() {
     fmt.Println("released mutexes")
 }
 
-func (l Lookup) Store(s state.State, p Payload) {
+func (l *Lookup) Store(s state.State, p Payload) {
     l.Mmutex.Lock()
     l.M[s.GetRepr()] = p
     l.Mmutex.Unlock()
 }
 
-func (l Lookup) ParseIntArray(s string) [Columns]int {
+func (l *Lookup) ParseIntArray(s string) [Columns]int {
     s = strings.TrimSpace(s)
     s = strings.TrimRight(s, ";[]")
     s = strings.TrimLeft(s, ";[]")
@@ -135,7 +135,7 @@ func (l Lookup) ParseIntArray(s string) [Columns]int {
     return srepr
 }
 
-func (l Lookup) Load(input io.Reader) {
+func (l *Lookup) Load(input io.Reader) {
     r := bufio.NewReader(input)
 
     l.Mmutex.Lock()
@@ -156,7 +156,7 @@ func (l Lookup) Load(input io.Reader) {
     fmt.Println("loaded")
 }
 
-func (l Lookup) Dump(output io.Writer) {
+func (l *Lookup) Dump(output io.Writer) {
     l.Mmutex.RLock()
     fmt.Println("dumping, got lock")
     for key, value := range l.M {
