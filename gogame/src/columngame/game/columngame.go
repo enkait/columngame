@@ -188,8 +188,8 @@ func reporter() {
     for {
         counter += 1
         fmt.Println("getting lock")
-        newdata, cacheddata := l.GetStats()
-        fmt.Println("Calculated:", newdata + cacheddata, "states, new:", newdata, ", old:", cacheddata)
+        totaldata, cacheddata := l.GetStats()
+        fmt.Println("Calculated:", totaldata, "states, new:", totaldata-cacheddata, ", old:", cacheddata)
         if counter == 10 {
             counter = 0
             dump_map("defaultdump")

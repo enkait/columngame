@@ -107,7 +107,6 @@ func (l *Lookup) Cache() {
     for key, value := range l.M {
         l.readM[key] = value
     }
-    l.M = map[[Columns]int]Payload{}
     fmt.Println("releasing mutexes")
     l.Mmutex.Unlock()
     l.readMmutex.Unlock()
@@ -151,6 +150,7 @@ func (l *Lookup) Load(input io.Reader) {
 
         keyrepr := l.ParseIntArray(key)
         l.readM[keyrepr] = Deserialize(value)
+        l.M[keyrepr] = Deserialize(value)
     }
     l.Mmutex.Unlock()
     fmt.Println("loaded")
@@ -160,13 +160,6 @@ func (l *Lookup) Dump(output io.Writer) {
     l.Mmutex.RLock()
     fmt.Println("dumping, got lock")
     for key, value := range l.M {
-        fmt.Fprint(output, key);
-        fmt.Fprint(output, ";");
-        fmt.Fprint(output, value.Result);
-        fmt.Fprintln(output, ";");
-    }
-    fmt.Println("dumping readonly")
-    for key, value := range l.readM {
         fmt.Fprint(output, key);
         fmt.Fprint(output, ";");
         fmt.Fprint(output, value.Result);
