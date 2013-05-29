@@ -162,14 +162,14 @@ func (l *Lookup) Dump(output io.Writer) {
     for key, value := range l.M {
         fmt.Fprint(output, key);
         fmt.Fprint(output, ";");
-        fmt.Fprint(output, value);
+        fmt.Fprint(output, value.Result);
         fmt.Fprintln(output, ";");
     }
     fmt.Println("dumping readonly")
     for key, value := range l.readM {
         fmt.Fprint(output, key);
         fmt.Fprint(output, ";");
-        fmt.Fprint(output, value);
+        fmt.Fprint(output, value.Result);
         fmt.Fprintln(output, ";");
     }
     fmt.Println("dumping, releasing lock")

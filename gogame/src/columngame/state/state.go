@@ -45,7 +45,7 @@ func Compare(a, b []int) bool {
 }
 
 func (s State) GetRepr() [Columns]int {
-    repr := [][]int{}
+    repr := make([][]int, 0, len(s))
 
     temp := make([]int, 0, 3)
     for _, pawnValue := range s {
