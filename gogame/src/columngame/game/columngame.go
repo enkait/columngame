@@ -322,7 +322,7 @@ func reporter() {
         default:
         }
         //runtime.gosched()
-        time.Sleep(60000 * time.Millisecond)
+        time.Sleep(1000 * time.Millisecond)
     }
 }
 
@@ -338,14 +338,6 @@ func main() {
         defer pprof.StopCPUProfile()
     }
     fmt.Println("running")
-    a := 5
-    b := 3
-    if true {
-        a = 1
-        b := 2
-        fmt.Println(a, b)
-    }
-    fmt.Println(a, b)
 
     finished = make(chan struct{})
     if *load != "" {
