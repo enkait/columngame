@@ -21,7 +21,7 @@ const KnownLimit = 6
 const debug = false
 
 type Payload struct {
-    result int
+    Result int
 }
 
 func Deserialize(s string) Payload {
@@ -31,7 +31,7 @@ func Deserialize(s string) Payload {
 }
 
 func (p Payload) GetRepr() int {
-    return p.result
+    return p.Result
 }
 
 type Lookup struct {
@@ -40,6 +40,14 @@ type Lookup struct {
     Monce map[[Columns]int]*sync.Once
     Mmutex sync.RWMutex
     readMmutex sync.RWMutex
+}
+
+func GetLookup() Lookup {
+    newlookup := Lookup{}
+    newlookup.M = map[[Columns]int]Payload{}
+    newlookup.readM = map[[Columns]int]Payload{}
+    newlookup.Monce = map[[Columns]int]*sync.Once{}
+    return newlookup
 }
 
 func (l Lookup) ReadOnlyLookup(s state.State) (Payload, bool) {
@@ -82,6 +90,15 @@ func (l Lookup) GetOnce(s state.State) *sync.Once {
     return onlyonce
 }
 
+func (l Lookup) GetStats() (int, int) {
+    l.readMmutex.RLock()
+    l.Mmutex.RLock()
+    newdata, cacheddata := len(l.M), len(l.readM)
+    l.Mmutex.RUnlock()
+    l.readMmutex.RUnlock()
+    return newdata, cacheddata
+}
+
 func (l Lookup) Cache() {
     fmt.Println("storing results")
     l.readMmutex.Lock()
@@ -95,6 +112,12 @@ func (l Lookup) Cache() {
     l.Mmutex.Unlock()
     l.readMmutex.Unlock()
     fmt.Println("released mutexes")
+}
+
+func (l Lookup) Store(s state.State, p Payload) {
+    l.Mmutex.Lock()
+    l.M[s.GetRepr()] = p
+    l.Mmutex.Unlock()
 }
 
 func (l Lookup) ParseIntArray(s string) [Columns]int {

@@ -1,16 +1,13 @@
 package main
 
-import "sync"
 import "fmt"
 import "flag"
 import "os"
 import "log"
 import "time"
 import "runtime/pprof"
-import "bufio"
-import "strings"
-import "strconv"
 import "columngame/state"
+import "columngame/lookup"
 
 const MaxDepth = 0
 const Columns = 3 * 4
@@ -19,6 +16,8 @@ const KnownLimit = 6
 const debug = false
 
 var execSem chan bool = make(chan bool, 100)
+
+var l lookup.Lookup = lookup.GetLookup()
 
 func min(a int, b int) int {
     if a < b {
@@ -58,85 +57,48 @@ func Compare(a, b []int) bool {
     return len(a) < len(b);
 }
 
-var M map[[Columns]int]int = map[[Columns]int]int{}
-var readM map[[Columns]int]int = map[[Columns]int]int{}
-var Monce map[[Columns]int]*sync.Once = map[[Columns]int]*sync.Once{}
-var fincounter = 0
-var Mmutex sync.RWMutex
-var readMmutex sync.RWMutex
-
 func killable(kill uint, movement uint) bool {
     return ((movement >> (3 * kill)) & 7) != 0
 }
 
-func f(s state.State, depth int, returnchan chan int) {
+func f(s state.State, depth int, returnchan chan lookup.Payload) {
     if (s.Max() + 1 == KnownLimit) {
-        returnchan <- KnownLimit
+        returnchan <- lookup.Payload{KnownLimit}
         return
     }
 
-    readMmutex.RLock()
-    if val, ok := readM[s.GetRepr()]; ok {
-        readMmutex.RUnlock()
+    if val, ok := l.Lookup(s); ok {
         returnchan <- val
-        if depth <= MaxDepth {
-            Mmutex.Lock()
-            fincounter += 1
-            Mmutex.Unlock()
-        }
-        return
     }
-    readMmutex.RUnlock()
 
-    Mmutex.RLock()
-    if val, ok := M[s.GetRepr()]; ok {
-        Mmutex.RUnlock()
-        returnchan <- val
-        return
-    }
-    Mmutex.RUnlock()
-
-    Mmutex.RLock()
-    onlyonce, ok := Monce[s.GetRepr()]
-    Mmutex.RUnlock()
-    if !ok {
-        Mmutex.Lock()
-        onlyonce, ok = Monce[s.GetRepr()] // might have changed since last time
-        if !ok {
-            onlyonce = new(sync.Once)
-            Monce[s.GetRepr()] = onlyonce
-        }
-        Mmutex.Unlock()
-    }
+    onlyonce := l.GetOnce(s)
 
     realf := func() {
         if s.Dead() {
-            Mmutex.Lock()
-            M[s.GetRepr()] = 0
-            Mmutex.Unlock()
+            l.Store(s, lookup.Payload{0})
             return
         }
         masklen := uint(len(s))
         movementcodes := (uint(1))<<masklen
 
-        takemin := func(resultchannel chan int, inputchannel chan int, taskcount int) {
+        takemin := func(resultchannel chan lookup.Payload, inputchannel chan lookup.Payload, taskcount int) {
             globalmin := 1000000000
             for task := 0; task < taskcount; task++ {
                 result := <-inputchannel
-                globalmin = min(globalmin, result)
+                globalmin = min(globalmin, result.Result)
             }
-            resultchannel <- globalmin
+            resultchannel <- lookup.Payload{globalmin}
         }
 
         highestresult := 0
 
-        globalresultchannel := make(chan int, movementcodes)
+        globalresultchannel := make(chan lookup.Payload, movementcodes)
         movements := 0
         for movement := uint(1); movement < movementcodes; movement++ {
             if s.CheckMove(movement) {
                 news := s.Move(movement)
                 highestresult = max(news.Max(), highestresult)
-                resultchannel := make(chan int, len(s))
+                resultchannel := make(chan lookup.Payload, len(s))
                 taskcount := 0
                 for kill := uint(0); kill < uint(len(s)); kill++ {
                     killspec := (7 << (3 * kill)) & movement
@@ -157,26 +119,17 @@ func f(s state.State, depth int, returnchan chan int) {
 
         for task := 0; task < movements; task++ {
             result := <-globalresultchannel
-            highestresult = max(highestresult, result)
+            highestresult = max(highestresult, result.Result)
         }
 
-        Mmutex.Lock()
-        M[s.GetRepr()] = highestresult
-        Mmutex.Unlock()
+        l.Store(s, lookup.Payload{highestresult})
     }
 
     if depth > MaxDepth {
         onlyonce.Do(realf)
 
-        Mmutex.RLock()
-        if val, ok := M[s.GetRepr()]; ok {
-            Mmutex.RUnlock()
+        if val, ok := l.Lookup(s); ok {
             returnchan <- val
-            return
-        } else if val, ok := readM[s.GetRepr()]; ok { //perhaps we already copied the result
-            Mmutex.RUnlock()
-            returnchan <- val
-            return
         } else {
             panic("something went terribly wrong")
         }
@@ -184,20 +137,12 @@ func f(s state.State, depth int, returnchan chan int) {
         _ = <-execSem
         go func() {
             realf()
-            Mmutex.RLock()
-            if val, ok := M[s.GetRepr()]; ok {
-                Mmutex.RUnlock()
-                returnchan <- val
-            } else if val, ok := readM[s.GetRepr()]; ok { // as above, maybe we already copied this to Mread
-                Mmutex.RUnlock()
+            if val, ok := l.Lookup(s); ok {
                 returnchan <- val
             } else {
                 panic("something went terribly wrong")
             }
             execSem <- false
-            Mmutex.Lock()
-            fincounter += 1
-            Mmutex.Unlock()
         }();
     }
 
@@ -214,38 +159,7 @@ func load_map() {
     }
     defer f.Close()
 
-    r := bufio.NewReader(f)
-
-    Mmutex.Lock()
-    for {
-        key, err := r.ReadString(byte(';'))
-        if err != nil {
-            break
-        }
-        value, err := r.ReadString(byte(';'))
-        if err != nil {
-            break
-        }
-        key = strings.TrimSpace(key)
-        key = strings.TrimRight(key, ";[]")
-        key = strings.TrimLeft(key, ";[]")
-        value = strings.TrimSpace(value)
-        value = strings.TrimRight(value, ";")
-        keytab := strings.Split(key, " ")
-
-        keyrepr := [Columns]int{}
-
-        for index, indexvalue := range keytab {
-            value64bit, _ := strconv.ParseInt(indexvalue, 0, 32)
-            keyrepr[index] = int(value64bit)
-        }
-        value64bit, _ := strconv.ParseInt(value, 0, 32)
-        valuerepr := int(value64bit)
-
-        readM[keyrepr] = valuerepr
-    }
-    Mmutex.Unlock()
-    fmt.Println("loaded")
+    l.Load(f)
 }
 
 func dump_map_thread() {
@@ -256,21 +170,6 @@ func dump_map_thread() {
     }
 }
 
-func store_results() {
-    fmt.Println("storing results")
-    readMmutex.Lock()
-    Mmutex.Lock()
-    fmt.Println("got mutexes, storing M in readM")
-    for key, value := range M {
-        readM[key] = value
-    }
-    M = map[[Columns]int]int{}
-    fmt.Println("releasing mutexes")
-    Mmutex.Unlock()
-    readMmutex.Unlock()
-    fmt.Println("released mutexes")
-}
-
 func dump_map(filename string) {
     fmt.Println("dumping to", filename)
     f, err := os.Create(filename)
@@ -279,24 +178,7 @@ func dump_map(filename string) {
     }
     defer f.Close()
 
-    Mmutex.RLock()
-    fmt.Println("dumping, got lock")
-    for key, value := range M {
-        fmt.Fprint(f, key);
-        fmt.Fprint(f, ";");
-        fmt.Fprint(f, value);
-        fmt.Fprintln(f, ";");
-    }
-    fmt.Println("dumping readonly")
-    for key, value := range readM {
-        fmt.Fprint(f, key);
-        fmt.Fprint(f, ";");
-        fmt.Fprint(f, value);
-        fmt.Fprintln(f, ";");
-    }
-    fmt.Println("dumping, releasing lock")
-    Mmutex.RUnlock()
-    fmt.Println("dumped")
+    l.Dump(f)
 }
 
 var finished chan struct{}
@@ -306,14 +188,12 @@ func reporter() {
     for {
         counter += 1
         fmt.Println("getting lock")
-        Mmutex.RLock()
-        fmt.Println("Calculated:", len(M) + len(readM), "states, new:", len(M), ", old:", len(readM))
-        fmt.Println("Including:", fincounter, "starting states (num threads terminated)")
-        Mmutex.RUnlock()
+        newdata, cacheddata := l.GetStats()
+        fmt.Println("Calculated:", newdata + cacheddata, "states, new:", newdata, ", old:", cacheddata)
         if counter == 10 {
             counter = 0
             dump_map("defaultdump")
-            store_results()
+            l.Cache()
         }
         fmt.Println("released lock")
         select {
@@ -350,11 +230,11 @@ func main() {
     for _ = range [100]struct{}{} {
         execSem <- false
     }
-    result := make(chan int, 1)
+    result := make(chan lookup.Payload, 1)
     startstate := state.State{0,0,0,0,0,0,0,0,0,0,0,0}
     f(startstate, -1, result)
     val := <-result
-    fmt.Println(val)
+    fmt.Println(val.Result)
     finished <- struct{}{}
     dump_map("finished")
 }
